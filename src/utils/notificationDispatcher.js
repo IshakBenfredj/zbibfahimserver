@@ -10,31 +10,61 @@ let admin = null;
 try {
   let serviceAccount = null;
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    // Check root of server directory for service account JSON
-    const serverDir = path.join(__dirname, '../../');
-    const directFile = path.join(serverDir, 'enpanne-9ae01-firebase-adminsdk-fbsvc-bdaa7913c5.json');
-    if (fs.existsSync(directFile)) {
-      serviceAccount = require(directFile);
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+    if (raw.startsWith('{')) {
+      serviceAccount = JSON.parse(raw);
     } else {
-      const candidates = [
-        path.join(serverDir, 'serviceAccountKey.json'),
-        path.join(__dirname, '../config/serviceAccountKey.json')
-      ];
-      for (const p of candidates) {
-        if (fs.existsSync(p)) {
-          serviceAccount = require(p);
+      try {
+        const decoded = Buffer.from(raw, 'base64').toString('utf8');
+        serviceAccount = JSON.parse(decoded);
+      } catch {
+        serviceAccount = JSON.parse(raw);
+      }
+    }
+  }
+
+  if (!serviceAccount) {
+    const serverDir = path.join(__dirname, '../../');
+    const candidates = [
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+      '/etc/secrets/enpanne-9ae01-firebase-adminsdk-fbsvc-bdaa7913c5.json',
+      '/etc/secrets/serviceAccountKey.json',
+      path.join(serverDir, 'enpanne-9ae01-firebase-adminsdk-fbsvc-bdaa7913c5.json'),
+      path.join(serverDir, 'serviceAccountKey.json'),
+      path.join(__dirname, '../config/serviceAccountKey.json')
+    ].filter(Boolean);
+
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        try {
+          serviceAccount = JSON.parse(fs.readFileSync(p, 'utf8'));
           break;
+        } catch (err) {
+          console.error('[Push Notification] Error reading serviceAccount from', p, err.message);
         }
       }
-      if (!serviceAccount && fs.existsSync(serverDir)) {
+    }
+
+    // Check /etc/secrets directory on Render
+    if (!serviceAccount && fs.existsSync('/etc/secrets')) {
+      try {
+        const secretFiles = fs.readdirSync('/etc/secrets');
+        const sf = secretFiles.find(file => file.endsWith('.json'));
+        if (sf) {
+          serviceAccount = JSON.parse(fs.readFileSync(path.join('/etc/secrets', sf), 'utf8'));
+        }
+      } catch {}
+    }
+
+    // Check root of server directory
+    if (!serviceAccount && fs.existsSync(serverDir)) {
+      try {
         const files = fs.readdirSync(serverDir);
         const f = files.find(file => file.includes('firebase-adminsdk') && file.endsWith('.json'));
         if (f) {
-          serviceAccount = require(path.join(serverDir, f));
+          serviceAccount = JSON.parse(fs.readFileSync(path.join(serverDir, f), 'utf8'));
         }
-      }
+      } catch {}
     }
   }
 
