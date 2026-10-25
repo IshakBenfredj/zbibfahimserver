@@ -7,7 +7,7 @@ const {
   getUnreadCount,
   saveFcmToken
 } = require('../controllers/notificationController');
-const { protect } = require('../middlewares/auth');
+const { protect } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
