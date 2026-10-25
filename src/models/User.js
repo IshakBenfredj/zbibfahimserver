@@ -101,6 +101,10 @@ const userSchema = new mongoose.Schema({
   hasLocationSet: {
     type: Boolean,
     default: false
+  },
+  fcmToken: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true

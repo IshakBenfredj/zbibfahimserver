@@ -75,9 +75,17 @@ const notifySellersNewRequest = (requestPayload) => {
   }
 };
 
+// Real-time helper: Notify seller that their quote was accepted
+const notifySellerQuoteAccepted = (sellerId, acceptPayload) => {
+  if (io) {
+    io.to(`user:${sellerId}`).emit('quote_accepted', acceptPayload);
+  }
+};
+
 module.exports = {
   initSocket,
   getIO,
   notifyClientNewQuote,
-  notifySellersNewRequest
+  notifySellersNewRequest,
+  notifySellerQuoteAccepted
 };

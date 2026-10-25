@@ -1,20 +1,8 @@
 const PartQuote = require('../models/PartQuote');
 const SparePartRequest = require('../models/SparePartRequest');
 const { notifyClientNewQuote } = require('../utils/socket');
-
-// Helper to calculate approximate distance in kilometers between two geo coordinates (Haversine)
-function calculateHaversineDistance(lon1, lat1, lon2, lat2) {
-  if (lon1 == null || lat1 == null || lon2 == null || lat2 == null) return null;
-  const R = 6371; // Earth radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
-}
+const { calculateHaversineDistance, calculateDrivingDistance } = require('../utils/distance');
+const { notifyNewQuote, notifyQuoteAccepted } = require('../utils/notificationDispatcher');
 
 // @desc    Submit or update a quote/offer for a spare part request (Realtime enabled)
 // @route   POST /api/quotes
@@ -76,26 +64,19 @@ exports.createOrUpdateQuote = async (req, res, next) => {
     ) {
       const [sellerLng, sellerLat] = req.user.location.coordinates;
       const [clientLng, clientLat] = request.location.coordinates;
-      liveDistanceKm = calculateHaversineDistance(sellerLng, sellerLat, clientLng, clientLat);
+      liveDistanceKm = calculateDrivingDistance(sellerLng, sellerLat, clientLng, clientLat);
     }
 
-    // REALTIME: Dispatch instant socket notification to the client
+    // REALTIME & PUSH: Dispatch instant notification to the client
     const updatedRequest = await SparePartRequest.findById(partRequestId);
-    notifyClientNewQuote(request.client.toString(), {
-      quoteId: quote._id,
-      partRequestId: request._id,
+    notifyNewQuote({
+      recipientId: request.client.toString(),
+      senderId: req.user.id,
+      sellerName: req.user.businessName || req.user.fullName,
       partName: request.partName,
       price: quote.price,
-      notes: quote.notes,
-      deliveryAvailable: quote.deliveryAvailable,
-      sellerName: req.user.businessName || req.user.fullName,
-      sellerRating: req.user.rating,
-      sellerPhone: req.user.phone,
-      sellerAvatar: req.user.avatar,
-      sellerVerified: req.user.isVerified || false,
-      distanceKm: liveDistanceKm,
-      quotesCount: updatedRequest ? updatedRequest.quotesCount : 1,
-      createdAt: quote.createdAt
+      partRequestId: request._id,
+      quoteId: quote._id
     });
 
     res.status(isNewQuote ? 201 : 200).json({
@@ -163,7 +144,7 @@ exports.getQuotesForRequest = async (req, res, next) => {
           clientLat != null
         ) {
           const [sellerLng, sellerLat] = q.seller.location.coordinates;
-          quoteObj.distanceKm = calculateHaversineDistance(sellerLng, sellerLat, clientLng, clientLat);
+          quoteObj.distanceKm = calculateDrivingDistance(sellerLng, sellerLat, clientLng, clientLat);
         } else {
           quoteObj.distanceKm = null;
         }
@@ -189,6 +170,24 @@ exports.getQuotesForRequest = async (req, res, next) => {
       success: true,
       count: totalQuotesCount, // Seller only sees the number of quotes!
       isRequestOwner,
+      requestStatus: request.status,
+      request: {
+        _id: request._id,
+        partName: request.partName,
+        carBrand: request.carBrand,
+        carModel: request.carModel,
+        carYear: request.carYear,
+        description: request.description,
+        referenceNumber: request.referenceNumber,
+        photos: request.photos,
+        status: request.status,
+        quotesCount: totalQuotesCount,
+        deliveryRequired: request.deliveryRequired,
+        deliveryWilaya: request.deliveryWilaya,
+        deliveryCommune: request.deliveryCommune,
+        deliveryAddressDetails: request.deliveryAddressDetails,
+        createdAt: request.createdAt
+      },
       data: sanitizedQuotes
     });
   } catch (err) {
@@ -242,6 +241,18 @@ exports.acceptQuote = async (req, res, next) => {
     // Mark the request as fulfilled
     await SparePartRequest.findByIdAndUpdate(quote.partRequest._id, {
       status: 'fulfilled'
+    });
+
+    // REALTIME & PUSH: Notify the seller that their quote was accepted
+    notifyQuoteAccepted({
+      sellerId: quote.seller.toString(),
+      clientId: req.user.id,
+      clientName: req.user.fullName,
+      clientPhone: req.user.phone,
+      partName: quote.partRequest.partName,
+      price: quote.price,
+      partRequestId: quote.partRequest._id,
+      quoteId: quote._id
     });
 
     res.status(200).json({

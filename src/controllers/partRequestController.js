@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const SparePartRequest = require('../models/SparePartRequest');
 const { notifySellersNewRequest } = require('../utils/socket');
+const { notifySellersNewPartRequestPushOnly } = require('../utils/notificationDispatcher');
 
 // @desc    Create a new spare part search request (Realtime enabled)
 // @route   POST /api/requests
@@ -87,6 +88,17 @@ exports.createRequest = async (req, res, next) => {
       createdAt: request.createdAt
     });
 
+    // PUSH NOTIFICATION: Alert sellers on their phones ONLY (without saving to database)
+    notifySellersNewPartRequestPushOnly({
+      requestId: request._id,
+      partName: request.partName,
+      carBrand: request.carBrand,
+      carModel: request.carModel,
+      carYear: request.carYear,
+      address: request.address,
+      clientLocation: request.location
+    });
+
     res.status(201).json({
       success: true,
       message: 'تم نشر طلب قطعة الغيار بنجاح، ستصلك عروض المحلات القريبة / Demande publiée avec succès',
@@ -161,8 +173,29 @@ exports.getNearbyRequestsForSellers = async (req, res, next) => {
       },
       {
         $addFields: {
+          straightKm: { $round: [{ $divide: ['$distanceMeters', 1000] }, 1] },
           distanceKm: {
-            $round: [{ $divide: ['$distanceMeters', 1000] }, 1]
+            $round: [
+              {
+                $multiply: [
+                  { $divide: ['$distanceMeters', 1000] },
+                  {
+                    $cond: [
+                      { $lt: ['$distanceMeters', 5000] },
+                      1.25,
+                      {
+                        $cond: [
+                          { $lt: ['$distanceMeters', 25000] },
+                          1.35,
+                          1.42
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              1
+            ]
           }
         }
       },

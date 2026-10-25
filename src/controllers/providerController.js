@@ -68,8 +68,29 @@ exports.getNearbyProviders = async (req, res, next) => {
       },
       {
         $addFields: {
+          straightKm: { $round: [{ $divide: ['$distanceMeters', 1000] }, 1] },
           distanceKm: {
-            $round: [{ $divide: ['$distanceMeters', 1000] }, 1]
+            $round: [
+              {
+                $multiply: [
+                  { $divide: ['$distanceMeters', 1000] },
+                  {
+                    $cond: [
+                      { $lt: ['$distanceMeters', 5000] },
+                      1.25,
+                      {
+                        $cond: [
+                          { $lt: ['$distanceMeters', 25000] },
+                          1.35,
+                          1.42
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              1
+            ]
           }
         }
       },
@@ -90,7 +111,30 @@ exports.getNearbyProviders = async (req, res, next) => {
       data: providers
     });
   } catch (err) {
-    next(err);
+    console.error('[Nearby Providers Aggregation Error]:', err.message);
+    try {
+      const fallbackQuery = {
+        isActive: true,
+        role: { $in: ['mechanic', 'electrician', 'seller'] }
+      };
+      if (req.query.role) fallbackQuery.role = req.query.role;
+      const fallbackProviders = await User.find(fallbackQuery)
+        .select('-password -__v')
+        .limit(50);
+
+      return res.status(200).json({
+        success: true,
+        count: fallbackProviders.length,
+        data: fallbackProviders,
+        isFallback: true
+      });
+    } catch (_) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: []
+      });
+    }
   }
 };
 

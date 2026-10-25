@@ -1,6 +1,11 @@
 # Dependencies
 node_modules/
 
+# Firebase Service Account Credentials (DO NOT COMMIT)
+*firebase-adminsdk*.json
+serviceAccountKey.json
+enpanne-*.json
+
 # Environment variables (keep .env.example)
 .env
 .env.*

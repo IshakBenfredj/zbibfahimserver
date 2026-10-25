@@ -1,13 +1,31 @@
-const cron = require('cron')
-const https = require('https')
+const cron = require('cron');
+const https = require('https');
 
-const job = new cron.CronJob("*/14 * * * *", function () {
-  https
-    .get(process.env.API_URL, (res) => {
-      if (res.statusCode === 200) console.log("GET request sent successfully");
-      else console.log("GET request failed", res.statusCode);
-    })
-    .on("error", (e) => console.error("Error while sending request", e));
+const pingUrl =
+  process.env.API_URL ||
+  process.env.BASE_URL ||
+  'https://zbibfahimserver.onrender.com';
+
+const job = new cron.CronJob('*/14 * * * *', function () {
+  try {
+    const target = pingUrl.endsWith('/api/health')
+      ? pingUrl
+      : `${pingUrl.replace(/\/+$/, '')}/api/health`;
+
+    https
+      .get(target, (res) => {
+        if (res.statusCode === 200) {
+          console.log('[Cron] Keep-alive ping sent successfully (200)');
+        } else {
+          console.log('[Cron] Keep-alive ping status:', res.statusCode);
+        }
+      })
+      .on('error', (e) => {
+        console.error('[Cron] Keep-alive error:', e.message);
+      });
+  } catch (err) {
+    console.error('[Cron] Keep-alive exception:', err.message);
+  }
 });
 
-module.exports = job
+module.exports = job;

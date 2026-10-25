@@ -7,6 +7,7 @@ const connectDB = require("./config/db");
 const errorHandler = require("./middlewares/errorHandler");
 const { initSocket } = require("./utils/socket");
 const job = require("./cron");
+const mongoose = require("mongoose");
 
 // Load env variables
 dotenv.config();
@@ -36,12 +37,25 @@ app.use(
 // Serve static uploads
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
+// Root route
+app.get("/", (req, res) => {
+  res.status(200).json({
+    service: "En Panne API",
+    status: "online",
+    version: "1.0.0",
+    database: mongoose.connection.readyState === 1 ? "connected" : "connecting_or_disconnected",
+    healthCheck: "/api/health",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     status: "online",
     service: "En Panne API",
     version: "1.0.0",
+    database: mongoose.connection.readyState === 1 ? "connected" : "connecting_or_disconnected",
     realtime: "Socket.io enabled",
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
@@ -54,6 +68,7 @@ app.use("/api/providers", require("./routes/providerRoutes"));
 app.use("/api/requests", require("./routes/partRequestRoutes"));
 app.use("/api/quotes", require("./routes/quoteRoutes"));
 app.use("/api/reviews", require("./routes/reviewRoutes"));
+app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/upload", require("./routes/uploadRoutes"));
 
@@ -83,6 +98,11 @@ server.listen(PORT, () => {
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (err) => {
   console.error(`[Unhandled Rejection]: ${err.message}`);
+});
+
+// Handle uncaught exceptions so process never crashes on Render
+process.on("uncaughtException", (err) => {
+  console.error(`[Uncaught Exception]: ${err.message}`, err.stack);
 });
 
 module.exports = { app, server };

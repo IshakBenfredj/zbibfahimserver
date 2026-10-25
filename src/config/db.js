@@ -1,16 +1,22 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/en_panne_db');
-    console.log(`[MongoDB] Connected successfully to host: ${conn.connection.host}`);
+    const uri =
+      process.env.MONGODB_URI || "mongodb://localhost:27017/en_panne_db";
+    const conn = await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000,
+    });
+    console.log(
+      `[MongoDB] Connected successfully to host: ${conn.connection.host}`,
+    );
     console.log(`[MongoDB] Database Name: ${conn.connection.name}`);
   } catch (error) {
-    console.error(`[MongoDB] Connection error: ${error.message}`);
-    // Do not exit process in development to allow server to run and retry
-    if (process.env.NODE_ENV === 'production') {
-      process.exit(1);
-    }
+    console.error(`[MongoDB] Connection warning/error: ${error.message}`);
+    console.error(
+      `[MongoDB] Please ensure MONGODB_URI is set on Render and Atlas Network Access allows 0.0.0.0/0.`,
+    );
+    // Do not exit process in production to allow web service to remain online and handle health checks
   }
 };
 
