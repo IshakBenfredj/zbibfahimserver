@@ -1,7 +1,7 @@
 const PartQuote = require('../models/PartQuote');
 const SparePartRequest = require('../models/SparePartRequest');
 const { notifyClientNewQuote } = require('../utils/socket');
-const { calculateHaversineDistance, calculateDrivingDistance } = require('../utils/distance');
+const { getOsrmRoute, getOsrmDistanceBatch, calculateHaversineDistance, calculateDrivingDistance } = require('../utils/distance');
 const { notifyNewQuote, notifyQuoteAccepted } = require('../utils/notificationDispatcher');
 
 // @desc    Submit or update a quote/offer for a spare part request (Realtime enabled)
@@ -54,8 +54,9 @@ exports.createOrUpdateQuote = async (req, res, next) => {
       });
     }
 
-    // Calculate real-time distance between seller and client request
+    // Calculate real-time road distance and duration between seller and client request via OpenStreetMap OSRM
     let liveDistanceKm = null;
+    let liveDurationMin = null;
     if (
       req.user.location &&
       req.user.location.coordinates &&
@@ -64,7 +65,11 @@ exports.createOrUpdateQuote = async (req, res, next) => {
     ) {
       const [sellerLng, sellerLat] = req.user.location.coordinates;
       const [clientLng, clientLat] = request.location.coordinates;
-      liveDistanceKm = calculateDrivingDistance(sellerLng, sellerLat, clientLng, clientLat);
+      const route = await getOsrmRoute(sellerLng, sellerLat, clientLng, clientLat);
+      if (route) {
+        liveDistanceKm = route.distanceKm;
+        liveDurationMin = route.durationMin;
+      }
     }
 
     // REALTIME & PUSH: Dispatch instant notification to the client
@@ -84,7 +89,8 @@ exports.createOrUpdateQuote = async (req, res, next) => {
       message: 'تم إرسال عرضك بنجاح، يظهر سعرك للزبون صاحب الطلب حصراً وبسرية تامة / Offre envoyée avec succès',
       data: {
         ...quote.toObject(),
-        distanceKm: liveDistanceKm
+        distanceKm: liveDistanceKm,
+        durationMin: liveDurationMin
       }
     });
   } catch (err) {
@@ -130,25 +136,22 @@ exports.getQuotesForRequest = async (req, res, next) => {
     let sanitizedQuotes = [];
 
     if (isRequestOwner || isAdmin) {
-      // Client sees all received quotes with distances
-      sanitizedQuotes = allQuotes.map(q => {
+      // Client sees all received quotes with real road distances & durations
+      const destinations = allQuotes.map(q =>
+        (q.seller && q.seller.location && q.seller.location.coordinates)
+          ? q.seller.location.coordinates
+          : null
+      );
+      const routes = (clientLng != null && clientLat != null)
+        ? await getOsrmDistanceBatch(clientLng, clientLat, destinations)
+        : allQuotes.map(() => null);
+
+      sanitizedQuotes = allQuotes.map((q, idx) => {
         const quoteObj = q.toObject();
         quoteObj.isPriceHidden = false;
         quoteObj.isMyQuote = false;
-
-        if (
-          q.seller &&
-          q.seller.location &&
-          q.seller.location.coordinates &&
-          clientLng != null &&
-          clientLat != null
-        ) {
-          const [sellerLng, sellerLat] = q.seller.location.coordinates;
-          quoteObj.distanceKm = calculateDrivingDistance(sellerLng, sellerLat, clientLng, clientLat);
-        } else {
-          quoteObj.distanceKm = null;
-        }
-
+        quoteObj.distanceKm = routes[idx] ? routes[idx].distanceKm : null;
+        quoteObj.durationMin = routes[idx] ? routes[idx].durationMin : null;
         return quoteObj;
       });
     } else {
@@ -160,6 +163,21 @@ exports.getQuotesForRequest = async (req, res, next) => {
         const quoteObj = myQuote.toObject();
         quoteObj.isPriceHidden = false;
         quoteObj.isMyQuote = true;
+        if (
+          myQuote.seller &&
+          myQuote.seller.location &&
+          myQuote.seller.location.coordinates &&
+          clientLng != null &&
+          clientLat != null
+        ) {
+          const [sellerLng, sellerLat] = myQuote.seller.location.coordinates;
+          const route = await getOsrmRoute(sellerLng, sellerLat, clientLng, clientLat);
+          quoteObj.distanceKm = route ? route.distanceKm : null;
+          quoteObj.durationMin = route ? route.durationMin : null;
+        } else {
+          quoteObj.distanceKm = null;
+          quoteObj.durationMin = null;
+        }
         sanitizedQuotes = [quoteObj];
       } else {
         sanitizedQuotes = [];

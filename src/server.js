@@ -8,6 +8,7 @@ const errorHandler = require("./middlewares/errorHandler");
 const { initSocket } = require("./utils/socket");
 const job = require("./cron");
 const mongoose = require("mongoose");
+const { getOsrmRoute } = require("./utils/distance");
 
 // Load env variables
 dotenv.config();
@@ -60,6 +61,55 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
   });
+});
+
+// Real-time Road Distance & Duration Route (OpenStreetMap & OSRM)
+app.get("/api/distance", async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    if (!start || !end) {
+      return res.status(400).json({
+        success: false,
+        message: "start and end coordinates required in longitude,latitude format. Example: ?start=0.1370,35.4040&end=0.1500,35.4200"
+      });
+    }
+
+    const [lon1, lat1] = start.split(',').map(s => parseFloat(s.trim()));
+    const [lon2, lat2] = end.split(',').map(s => parseFloat(s.trim()));
+
+    if (isNaN(lon1) || isNaN(lat1) || isNaN(lon2) || isNaN(lat2)) {
+      return res.status(400).json({
+        success: false,
+        message: "Coordinates must be valid numbers (longitude,latitude)"
+      });
+    }
+
+    const route = await getOsrmRoute(lon1, lat1, lon2, lat2);
+    if (!route) {
+      return res.status(500).json({
+        success: false,
+        message: "Unable to calculate route between coordinates"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        distanceKm: route.distanceKm,
+        durationMin: route.durationMin,
+        distanceMeters: route.distanceMeters,
+        durationSeconds: route.durationSeconds,
+        source: route.source,
+        start: `${lon1},${lat1}`,
+        end: `${lon2},${lat2}`
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
 });
 
 // Mount API Routes

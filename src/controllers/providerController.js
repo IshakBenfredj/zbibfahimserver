@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { getOsrmDistanceBatch } = require('../utils/distance');
 
 // @desc    Get nearby service providers / spare parts shops with accurate distance in km ($geoNear)
 // @route   GET /api/providers/nearby
@@ -105,6 +106,22 @@ exports.getNearbyProviders = async (req, res, next) => {
       }
     ]);
 
+    // Calculate accurate OpenStreetMap OSRM road distance & duration
+    if (providers && providers.length > 0) {
+      const destinations = providers.map(p =>
+        (p.location && p.location.coordinates) ? p.location.coordinates : null
+      );
+      const routes = await getOsrmDistanceBatch(userLng, userLat, destinations);
+      providers.forEach((p, idx) => {
+        if (routes[idx]) {
+          p.distanceKm = routes[idx].distanceKm;
+          p.durationMin = routes[idx].durationMin;
+        }
+      });
+      // Sort by real road driving distance
+      providers.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+    }
+
     res.status(200).json({
       success: true,
       count: providers.length,
@@ -121,6 +138,26 @@ exports.getNearbyProviders = async (req, res, next) => {
       const fallbackProviders = await User.find(fallbackQuery)
         .select('-password -__v')
         .limit(50);
+
+      if (fallbackProviders && fallbackProviders.length > 0) {
+        const destinations = fallbackProviders.map(p =>
+          (p.location && p.location.coordinates) ? p.location.coordinates : null
+        );
+        const routes = await getOsrmDistanceBatch(userLng, userLat, destinations);
+        const formatted = fallbackProviders.map((p, idx) => {
+          const obj = p.toObject();
+          obj.distanceKm = routes[idx] ? routes[idx].distanceKm : 10.0;
+          obj.durationMin = routes[idx] ? routes[idx].durationMin : null;
+          return obj;
+        });
+        formatted.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+        return res.status(200).json({
+          success: true,
+          count: formatted.length,
+          data: formatted,
+          isFallback: true
+        });
+      }
 
       return res.status(200).json({
         success: true,

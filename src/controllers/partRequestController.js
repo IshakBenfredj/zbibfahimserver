@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const SparePartRequest = require('../models/SparePartRequest');
 const { notifySellersNewRequest } = require('../utils/socket');
 const { notifySellersNewPartRequestPushOnly } = require('../utils/notificationDispatcher');
+const { getOsrmDistanceBatch } = require('../utils/distance');
 
 // @desc    Create a new spare part search request (Realtime enabled)
 // @route   POST /api/requests
@@ -237,6 +238,22 @@ exports.getNearbyRequestsForSellers = async (req, res, next) => {
         $sort: { distanceMeters: 1, createdAt: -1 }
       }
     ]);
+
+    // Calculate accurate OpenStreetMap OSRM road distance & duration
+    if (requests && requests.length > 0) {
+      const destinations = requests.map(r =>
+        (r.location && r.location.coordinates) ? r.location.coordinates : null
+      );
+      const routes = await getOsrmDistanceBatch(sellerLng, sellerLat, destinations);
+      requests.forEach((r, idx) => {
+        if (routes[idx]) {
+          r.distanceKm = routes[idx].distanceKm;
+          r.durationMin = routes[idx].durationMin;
+        }
+      });
+      // Sort by real road driving distance
+      requests.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+    }
 
     res.status(200).json({
       success: true,
