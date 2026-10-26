@@ -82,7 +82,8 @@ exports.register = async (req, res, next) => {
       location: userLocation,
       hasLocationSet,
       brandsSupported: brandsSupported ? (Array.isArray(brandsSupported) ? brandsSupported : JSON.parse(brandsSupported)) : [],
-      deliveryAvailable: deliveryAvailable === true || deliveryAvailable === 'true'
+      deliveryAvailable: deliveryAvailable === true || deliveryAvailable === 'true',
+      fcmToken: req.body.fcmToken || null
     });
 
     sendTokenResponse(user, 201, res, 'تم إنشاء الحساب بنجاح / Compte créé avec succès');
@@ -96,7 +97,7 @@ exports.register = async (req, res, next) => {
 // @access  Public
 exports.login = async (req, res, next) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, password, fcmToken } = req.body;
 
     if (!phone || !password) {
       return res.status(400).json({
@@ -120,6 +121,12 @@ exports.login = async (req, res, next) => {
         success: false,
         message: 'كلمة المرور غير صحيحة / Mot de passe incorrect'
       });
+    }
+
+    // Save active device FCM token if passed
+    if (fcmToken && typeof fcmToken === 'string' && fcmToken.trim().length > 10) {
+      user.fcmToken = fcmToken.trim();
+      await user.save();
     }
 
     sendTokenResponse(user, 200, res, 'مرحباً بك مجدداً / Connexion réussie');

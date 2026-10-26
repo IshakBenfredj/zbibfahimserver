@@ -85,15 +85,22 @@ try {
  * Dispatch Push Notification to device via FCM token
  */
 async function sendPushNotification(fcmToken, title, body, data = {}) {
-  if (!fcmToken || !admin) return false;
+  if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.trim().length < 10) {
+    console.warn('[Push Notification] Invalid or empty FCM token, skipping push.');
+    return false;
+  }
+  if (!admin) {
+    console.warn('[Push Notification] Firebase Admin NOT initialized. Please set FIREBASE_SERVICE_ACCOUNT environment variable on Render.');
+    return false;
+  }
   try {
     const stringifiedData = {};
     for (const [key, value] of Object.entries(data)) {
       stringifiedData[key] = String(value);
     }
 
-    await admin.messaging().send({
-      token: fcmToken,
+    const response = await admin.messaging().send({
+      token: fcmToken.trim(),
       notification: {
         title,
         body
@@ -108,7 +115,7 @@ async function sendPushNotification(fcmToken, title, body, data = {}) {
         }
       }
     });
-    console.log(`[Push Notification] FCM sent to token: ${fcmToken.slice(0, 15)}...`);
+    console.log(`[Push Notification] FCM push sent successfully to token: ${fcmToken.slice(0, 15)}... (msgId: ${response})`);
     return true;
   } catch (err) {
     console.error('[Push Notification Error]:', err.message);
@@ -220,16 +227,22 @@ async function notifyQuoteAccepted({ sellerId, clientId, clientName, clientPhone
  * (WITHOUT saving to MongoDB database, as per user requirement)
  */
 async function notifySellersNewPartRequestPushOnly({ requestId, partName, carBrand, carModel, carYear, address, clientLocation }) {
-  if (!admin) return;
+  if (!admin) {
+    console.warn('[Push Notification] Firebase Admin NOT initialized. Please set FIREBASE_SERVICE_ACCOUNT on Render to alert sellers on phone.');
+    return;
+  }
   try {
     const query = {
       role: 'seller',
       isActive: { $ne: false },
-      fcmToken: { $exists: true, $ne: null }
+      fcmToken: { $exists: true, $ne: null, $nin: ['', 'null', 'undefined'] }
     };
 
     const sellers = await User.find(query).select('fcmToken brandsSupported');
-    if (!sellers || sellers.length === 0) return;
+    if (!sellers || sellers.length === 0) {
+      console.log('[Push Notification] No active sellers with registered FCM tokens found.');
+      return;
+    }
 
     const title = 'طلب قطعة غيار جديد! 🔧';
     const vehicleText = [carBrand, carModel, carYear].filter(Boolean).join(' ');
@@ -239,23 +252,38 @@ async function notifySellersNewPartRequestPushOnly({ requestId, partName, carBra
 
     const tokensToSend = [];
     for (const seller of sellers) {
-      if (!seller.fcmToken) continue;
+      if (!seller.fcmToken || typeof seller.fcmToken !== 'string' || seller.fcmToken.trim().length < 10) continue;
+      
       // Filter by brands supported if specified by seller
       if (seller.brandsSupported && seller.brandsSupported.length > 0 && carBrand) {
-        const matchesBrand = seller.brandsSupported.some(b => 
-          b.toLowerCase().trim() === carBrand.toLowerCase().trim() ||
-          carBrand.toLowerCase().includes(b.toLowerCase().trim())
+        const isGeneral = seller.brandsSupported.some(b => 
+          ['الكل', 'tous', 'toutes', 'all', 'كل السيارات', 'جميع الماركات', 'toutes les marques'].includes(b.toLowerCase().trim())
         );
-        if (!matchesBrand) continue;
+        if (!isGeneral) {
+          const reqBrandClean = carBrand.toLowerCase().trim();
+          const matchesBrand = seller.brandsSupported.some(b => {
+            const bClean = b.toLowerCase().trim();
+            return bClean === reqBrandClean ||
+                   reqBrandClean.includes(bClean) ||
+                   bClean.includes(reqBrandClean);
+          });
+          if (!matchesBrand) {
+            console.log(`[Push Notification] Seller ${seller._id} skipped for request brand '${carBrand}'`);
+            continue;
+          }
+        }
       }
-      tokensToSend.push(seller.fcmToken);
+      tokensToSend.push(seller.fcmToken.trim());
     }
 
-    if (tokensToSend.length === 0) return;
+    if (tokensToSend.length === 0) {
+      console.log('[Push Notification] No seller tokens matched request criteria.');
+      return;
+    }
 
     console.log(`[Push Notification] Dispatching push-only alert to ${tokensToSend.length} spare parts sellers...`);
 
-    await admin.messaging().sendEachForMulticast({
+    const result = await admin.messaging().sendEachForMulticast({
       tokens: tokensToSend,
       notification: {
         title,
@@ -278,7 +306,14 @@ async function notifySellersNewPartRequestPushOnly({ requestId, partName, carBra
       }
     });
 
-    console.log(`[Push Notification] Successfully dispatched push-only alert to sellers for request ${requestId}`);
+    console.log(`[Push Notification] Dispatched to sellers: ${result.successCount} succeeded, ${result.failureCount} failed.`);
+    if (result.failureCount > 0) {
+      result.responses.forEach((r, idx) => {
+        if (!r.success) {
+          console.error(`[Push Notification] Error sending to seller token ${tokensToSend[idx].slice(0, 10)}...:`, r.error?.message);
+        }
+      });
+    }
   } catch (err) {
     console.error('[Push Notification Sellers Error]:', err.message);
   }

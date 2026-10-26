@@ -230,7 +230,12 @@ exports.getNearbyRequestsForSellers = async (req, res, next) => {
           distanceKm: 1,
           createdAt: 1,
           client: 1,
+          deliveryRequired: 1,
+          deliveryWilaya: 1,
+          deliveryCommune: 1,
+          deliveryAddressDetails: 1,
           'clientDetails.fullName': 1,
+          'clientDetails.phone': 1,
           'clientDetails.avatar': 1
         }
       },
