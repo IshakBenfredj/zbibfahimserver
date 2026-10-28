@@ -4,7 +4,8 @@ const {
   createOrUpdateQuote,
   getQuotesForRequest,
   getMyQuotes,
-  acceptQuote
+  acceptQuote,
+  rejectQuote
 } = require('../controllers/quoteController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorize } = require('../middlewares/roleMiddleware');
@@ -18,6 +19,10 @@ router.get('/request/:requestId', protect, getQuotesForRequest);
 // Client accepts quote
 router.put('/:id/accept', protect, acceptQuote);
 router.patch('/:id/accept', protect, acceptQuote);
+
+// Client rejects quote
+router.put('/:id/reject', protect, rejectQuote);
+router.patch('/:id/reject', protect, rejectQuote);
 
 // Seller lists all their submitted quotes
 router.get('/my-offers', protect, authorize('seller', 'admin'), getMyQuotes);

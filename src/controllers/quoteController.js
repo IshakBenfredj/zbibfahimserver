@@ -103,7 +103,8 @@ exports.createOrUpdateQuote = async (req, res, next) => {
 // @access  Private (Client author or Sellers)
 exports.getQuotesForRequest = async (req, res, next) => {
   try {
-    const request = await SparePartRequest.findById(req.params.requestId);
+    const request = await SparePartRequest.findById(req.params.requestId)
+      .populate('client', 'fullName phone avatar address');
     if (!request) {
       return res.status(404).json({
         success: false,
@@ -111,7 +112,8 @@ exports.getQuotesForRequest = async (req, res, next) => {
       });
     }
 
-    const isRequestOwner = request.client.toString() === req.user.id;
+    const clientId = request.client ? (request.client._id ? request.client._id.toString() : request.client.toString()) : '';
+    const isRequestOwner = clientId === req.user.id;
     const isAdmin = req.user.role === 'admin';
 
     // Support live user GPS location if passed in query params, or fallback to request location
@@ -129,10 +131,6 @@ exports.getQuotesForRequest = async (req, res, next) => {
 
     const totalQuotesCount = allQuotes.length;
 
-    // STRICT CONFIDENTIALITY RULE:
-    // If user is NOT the request owner and NOT an admin (i.e. is a seller):
-    // The seller is ONLY allowed to see the count of quotes and their OWN quote (if they submitted one).
-    // Other competing quotes are completely excluded from the payload!
     let sanitizedQuotes = [];
 
     if (isRequestOwner || isAdmin) {
@@ -178,15 +176,29 @@ exports.getQuotesForRequest = async (req, res, next) => {
           quoteObj.distanceKm = null;
           quoteObj.durationMin = null;
         }
+
+        // If this quote is accepted, attach client contact info so seller can call client!
+        if (myQuote.status === 'accepted' && request.client) {
+          quoteObj.clientName = request.client.fullName || '';
+          quoteObj.clientPhone = request.client.phone || '';
+          quoteObj.clientAvatar = request.client.avatar || '';
+          quoteObj.clientAddress = request.client.address || '';
+        }
+
         sanitizedQuotes = [quoteObj];
       } else {
         sanitizedQuotes = [];
       }
     }
 
+    // Expose client info if client/admin OR if the seller's quote has been accepted
+    const sellerQuote = sanitizedQuotes.find(q => q.isMyQuote);
+    const sellerQuoteAccepted = sellerQuote && sellerQuote.status === 'accepted';
+    const canSeeClientInfo = isRequestOwner || isAdmin || sellerQuoteAccepted;
+
     res.status(200).json({
       success: true,
-      count: totalQuotesCount, // Seller only sees the number of quotes!
+      count: totalQuotesCount,
       isRequestOwner,
       requestStatus: request.status,
       request: {
@@ -204,7 +216,10 @@ exports.getQuotesForRequest = async (req, res, next) => {
         deliveryWilaya: request.deliveryWilaya,
         deliveryCommune: request.deliveryCommune,
         deliveryAddressDetails: request.deliveryAddressDetails,
-        createdAt: request.createdAt
+        createdAt: request.createdAt,
+        clientName: (canSeeClientInfo && request.client) ? request.client.fullName : '',
+        clientPhone: (canSeeClientInfo && request.client) ? request.client.phone : '',
+        clientAddress: (canSeeClientInfo && request.client) ? request.client.address : ''
       },
       data: sanitizedQuotes
     });
@@ -219,13 +234,40 @@ exports.getQuotesForRequest = async (req, res, next) => {
 exports.getMyQuotes = async (req, res, next) => {
   try {
     const quotes = await PartQuote.find({ seller: req.user.id })
-      .populate('partRequest')
+      .populate({
+        path: 'partRequest',
+        populate: {
+          path: 'client',
+          select: 'fullName phone avatar address wilaya commune'
+        }
+      })
       .sort({ createdAt: -1 });
+
+    const formatted = quotes.map(q => {
+      const obj = q.toObject();
+      if (q.partRequest) {
+        obj.requestPartName = q.partRequest.partName;
+        obj.requestCarInfo = `${q.partRequest.carBrand || ''} ${q.partRequest.carModel || ''}${q.partRequest.carYear ? ` (${q.partRequest.carYear})` : ''}`.trim();
+        obj.requestStatus = q.partRequest.status;
+        obj.deliveryWilaya = q.partRequest.deliveryWilaya;
+        obj.deliveryCommune = q.partRequest.deliveryCommune;
+        obj.deliveryAddressDetails = q.partRequest.deliveryAddressDetails;
+        
+        // If accepted by the client, attach client name and phone so seller can contact client
+        if (q.status === 'accepted' && q.partRequest.client) {
+          obj.clientName = q.partRequest.client.fullName || '';
+          obj.clientPhone = q.partRequest.client.phone || '';
+          obj.clientAvatar = q.partRequest.client.avatar || '';
+          obj.clientAddress = q.partRequest.client.address || '';
+        }
+      }
+      return obj;
+    });
 
     res.status(200).json({
       success: true,
-      count: quotes.length,
-      data: quotes
+      count: formatted.length,
+      data: formatted
     });
   } catch (err) {
     next(err);
@@ -256,6 +298,18 @@ exports.acceptQuote = async (req, res, next) => {
     quote.status = 'accepted';
     await quote.save();
 
+    // Mark all other competing quotes on this request as rejected
+    await PartQuote.updateMany(
+      {
+        partRequest: quote.partRequest._id,
+        _id: { $ne: quote._id },
+        status: 'pending'
+      },
+      {
+        status: 'rejected'
+      }
+    );
+
     // Mark the request as fulfilled
     await SparePartRequest.findByIdAndUpdate(quote.partRequest._id, {
       status: 'fulfilled'
@@ -276,6 +330,39 @@ exports.acceptQuote = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'تم قبول العرض بنجاح وإغلاق الطلب / Offre acceptée avec succès',
+      data: quote
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Reject a quote by the client
+// @route   PUT /api/quotes/:id/reject
+// @access  Private (Client author)
+exports.rejectQuote = async (req, res, next) => {
+  try {
+    const quote = await PartQuote.findById(req.params.id).populate('partRequest');
+    if (!quote) {
+      return res.status(404).json({
+        success: false,
+        message: 'العرض غير موجود / Offre introuvable'
+      });
+    }
+
+    if (quote.partRequest.client.toString() !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح لك برفض هذا العرض / Non autorisé'
+      });
+    }
+
+    quote.status = 'rejected';
+    await quote.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'تم رفض العرض / Offre refusée',
       data: quote
     });
   } catch (err) {

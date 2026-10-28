@@ -18,7 +18,7 @@ const seedProviders = [
     workingHours: '08:00 - 18:30 (السبت - الخميس)',
     rating: 4.9,
     reviewsCount: 38,
-    isVerified: true,
+    isVerified: false,
     hasLocationSet: true,
     services: [
       { title: 'تغيير الزيت والفلاتر (Vidange)', description: 'زيت محرك أصلي 5W40 أو 10W40 مع تغيير فلتر الزيت والهواء', estimatedPrice: 4500 },
@@ -39,7 +39,7 @@ const seedProviders = [
     workingHours: '08:30 - 19:00',
     rating: 4.8,
     reviewsCount: 45,
-    isVerified: true,
+    isVerified: false,
     hasLocationSet: true,
     services: [
       { title: 'فحص بالسكانير الشامل (Diagnostic Scanner)', description: 'كشف الأعطال الإلكترونية وحذف أكواد الخطأ وفحص الحساسات', estimatedPrice: 2000 },
@@ -61,7 +61,7 @@ const seedProviders = [
     workingHours: '08:00 - 18:00 (طيلة أيام الأسبوع ما عدا الجمعة)',
     rating: 4.7,
     reviewsCount: 52,
-    isVerified: true,
+    isVerified: false,
     hasLocationSet: true
   }
 ];

@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { getOsrmDistanceBatch } = require('../utils/distance');
+const { computeShopOpenStatus } = require('../utils/scheduleHelper');
 
 // @desc    Get nearby service providers / spare parts shops with accurate distance in km ($geoNear)
 // @route   GET /api/providers/nearby
@@ -117,9 +118,22 @@ exports.getNearbyProviders = async (req, res, next) => {
           p.distanceKm = routes[idx].distanceKm;
           p.durationMin = routes[idx].durationMin;
         }
+        const openStatus = computeShopOpenStatus(p);
+        p.isOpen = openStatus.isOpen;
+        p.openReason = openStatus.reason;
+        p.openStatusTextAr = openStatus.statusTextAr;
+        p.openStatusTextFr = openStatus.statusTextFr;
       });
       // Sort by real road driving distance
       providers.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+    } else if (providers) {
+      providers.forEach(p => {
+        const openStatus = computeShopOpenStatus(p);
+        p.isOpen = openStatus.isOpen;
+        p.openReason = openStatus.reason;
+        p.openStatusTextAr = openStatus.statusTextAr;
+        p.openStatusTextFr = openStatus.statusTextFr;
+      });
     }
 
     res.status(200).json({
@@ -148,6 +162,11 @@ exports.getNearbyProviders = async (req, res, next) => {
           const obj = p.toObject();
           obj.distanceKm = routes[idx] ? routes[idx].distanceKm : 10.0;
           obj.durationMin = routes[idx] ? routes[idx].durationMin : null;
+          const openStatus = computeShopOpenStatus(p);
+          obj.isOpen = openStatus.isOpen;
+          obj.openReason = openStatus.reason;
+          obj.openStatusTextAr = openStatus.statusTextAr;
+          obj.openStatusTextFr = openStatus.statusTextFr;
           return obj;
         });
         formatted.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
@@ -189,9 +208,16 @@ exports.getProviderById = async (req, res, next) => {
       });
     }
 
+    const providerObj = provider.toObject();
+    const openStatus = computeShopOpenStatus(provider);
+    providerObj.isOpen = openStatus.isOpen;
+    providerObj.openReason = openStatus.reason;
+    providerObj.openStatusTextAr = openStatus.statusTextAr;
+    providerObj.openStatusTextFr = openStatus.statusTextFr;
+
     res.status(200).json({
       success: true,
-      data: provider
+      data: providerObj
     });
   } catch (err) {
     next(err);

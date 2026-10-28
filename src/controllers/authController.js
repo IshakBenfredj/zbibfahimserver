@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { computeShopOpenStatus } = require('../utils/scheduleHelper');
 
 // Helper to generate JWT token
 const sendTokenResponse = (user, statusCode, res, message = 'تمت العملية بنجاح') => {
@@ -23,6 +24,14 @@ const sendTokenResponse = (user, statusCode, res, message = 'تمت العملي
       location: user.location,
       avatar: user.avatar,
       deliveryAvailable: user.deliveryAvailable,
+      workingHours: user.workingHours || '08:00 - 18:00',
+      is24_7: user.is24_7 || false,
+      isTemporarilyClosed: user.isTemporarilyClosed || false,
+      temporaryClosureReason: user.temporaryClosureReason || '',
+      workingDays: user.workingDays || [6, 0, 1, 2, 3, 4],
+      openTime: user.openTime || '08:00',
+      closeTime: user.closeTime || '18:00',
+      isOpen: computeShopOpenStatus(user).isOpen,
       rating: user.rating,
       reviewsCount: user.reviewsCount,
       isVerified: user.isVerified,
@@ -141,9 +150,18 @@ exports.login = async (req, res, next) => {
 exports.getMe = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
+    }
+    const userObj = user.toObject();
+    const openStatus = computeShopOpenStatus(user);
+    userObj.isOpen = openStatus.isOpen;
+    userObj.openReason = openStatus.reason;
+    userObj.openStatusTextAr = openStatus.statusTextAr;
+    userObj.openStatusTextFr = openStatus.statusTextFr;
     res.status(200).json({
       success: true,
-      user
+      user: userObj
     });
   } catch (err) {
     next(err);
@@ -165,7 +183,13 @@ exports.updateProfile = async (req, res, next) => {
       'brandsSupported',
       'deliveryAvailable',
       'workingHours',
-      'services'
+      'services',
+      'is24_7',
+      'isTemporarilyClosed',
+      'temporaryClosureReason',
+      'workingDays',
+      'openTime',
+      'closeTime'
     ];
 
     const updates = {};
@@ -191,10 +215,54 @@ exports.updateProfile = async (req, res, next) => {
       runValidators: true
     });
 
+    const userObj = user.toObject();
+    const openStatus = computeShopOpenStatus(user);
+    userObj.isOpen = openStatus.isOpen;
+    userObj.openReason = openStatus.reason;
+    userObj.openStatusTextAr = openStatus.statusTextAr;
+    userObj.openStatusTextFr = openStatus.statusTextFr;
+
     res.status(200).json({
       success: true,
       message: 'تم تحديث الملف الشخصي بنجاح / Profil mis à jour',
-      user
+      user: userObj
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Toggle shop manual temporary closure (زر الإغلاق السريع لظروف خاصة)
+// @route   PUT /api/auth/shop-status
+// @access  Private (Providers/Sellers)
+exports.toggleShopStatus = async (req, res, next) => {
+  try {
+    const { isTemporarilyClosed, temporaryClosureReason } = req.body;
+    const updates = {
+      isTemporarilyClosed: isTemporarilyClosed === true || isTemporarilyClosed === 'true'
+    };
+    if (temporaryClosureReason !== undefined) {
+      updates.temporaryClosureReason = temporaryClosureReason;
+    }
+
+    const user = await User.findByIdAndUpdate(req.user.id, updates, {
+      new: true,
+      runValidators: true
+    });
+
+    const userObj = user.toObject();
+    const openStatus = computeShopOpenStatus(user);
+    userObj.isOpen = openStatus.isOpen;
+    userObj.openReason = openStatus.reason;
+    userObj.openStatusTextAr = openStatus.statusTextAr;
+    userObj.openStatusTextFr = openStatus.statusTextFr;
+
+    res.status(200).json({
+      success: true,
+      message: updates.isTemporarilyClosed
+        ? 'تم إغلاق المحل مؤقتاً لظروف خاصة / Magasin fermé temporairement'
+        : 'تم فتح المحل لاستقبال الزبائن بنجاح / Magasin ouvert',
+      user: userObj
     });
   } catch (err) {
     next(err);

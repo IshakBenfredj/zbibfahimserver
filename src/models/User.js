@@ -80,6 +80,30 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: '08:00 - 18:00'
   },
+  is24_7: {
+    type: Boolean,
+    default: false
+  },
+  isTemporarilyClosed: {
+    type: Boolean,
+    default: false
+  },
+  temporaryClosureReason: {
+    type: String,
+    default: ''
+  },
+  workingDays: {
+    type: [Number],
+    default: [6, 0, 1, 2, 3, 4] // Saturday to Thursday (0=Sun, 1=Mon, ..., 6=Sat)
+  },
+  openTime: {
+    type: String,
+    default: '08:00'
+  },
+  closeTime: {
+    type: String,
+    default: '18:00'
+  },
   rating: {
     type: Number,
     default: 5.0,

@@ -4,6 +4,7 @@ const {
   getDashboardStats,
   getAllUsers,
   toggleUserStatus,
+  resetAllVerifications,
   getAllRequests,
   updateRequestStatus,
   deleteRequest,
@@ -23,6 +24,7 @@ router.get('/stats', getDashboardStats);
 // 2. Users Management
 router.get('/users', getAllUsers);
 router.patch('/users/:id/status', toggleUserStatus);
+router.post('/users/reset-verifications', resetAllVerifications);
 
 // 3. Requests Moderation
 router.get('/requests', getAllRequests);

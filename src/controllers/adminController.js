@@ -306,3 +306,24 @@ exports.deleteReview = async (req, res, next) => {
     next(err);
   }
 };
+
+// @desc    Reset all users verification status to false (Only admin can verify users individually)
+// @route   POST /api/admin/users/reset-verifications
+// @access  Private (Admin)
+exports.resetAllVerifications = async (req, res, next) => {
+  try {
+    const result = await User.updateMany(
+      { isVerified: true },
+      { $set: { isVerified: false } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `تم إلغاء توثيق جميع الحسابات بنجاح (${result.modifiedCount} حساب). الآن لا يظهر أي حساب كموثق إلا إذا قمت بتوثيقه يدوياً.`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
