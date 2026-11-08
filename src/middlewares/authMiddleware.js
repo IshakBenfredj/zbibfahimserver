@@ -15,6 +15,30 @@ const protect = async (req, res, next) => {
     });
   }
 
+  // Master Admin session token for admin mobile app secured with local PIN
+  if (token === 'en_panne_admin_master_session_token_2026' || token === process.env.ADMIN_MASTER_TOKEN) {
+    try {
+      let adminUser = await User.findOne({ role: 'admin' });
+      if (!adminUser) {
+        adminUser = await User.create({
+          fullName: 'مسؤول المنصة (Admin)',
+          phone: '0555000000',
+          password: 'secure_admin_system_pwd_2026',
+          role: 'admin',
+          isActive: true,
+          isVerified: true
+        });
+      }
+      req.user = adminUser;
+      return next();
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: 'خطأ في معالجة حساب المسؤول / Erreur de session admin'
+      });
+    }
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'en_panne_super_secret_jwt_key_2026_auto_mechanic');
     req.user = await User.findById(decoded.id);

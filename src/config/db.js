@@ -24,8 +24,11 @@ const connectDB = async () => {
       );
     }
 
-    // Ensure all existing provider accounts have an active trial period for testing
-    const trialMinutes = parseInt(process.env.PROVIDER_TRIAL_MINUTES || '10', 10);
+    // Ensure all existing provider accounts have an active trial period (default 30 days = 1 full month)
+    const trialDays = parseInt(process.env.PROVIDER_TRIAL_DAYS || '30', 10);
+    const trialMinutes = process.env.PROVIDER_TRIAL_MINUTES
+      ? parseInt(process.env.PROVIDER_TRIAL_MINUTES, 10)
+      : trialDays * 24 * 60;
     const providersWithoutSubscription = await User.find({
       role: { $in: ['seller', 'mechanic', 'electrician'] },
       $or: [
@@ -42,7 +45,7 @@ const connectDB = async () => {
         await provider.save();
       }
       console.log(
-        `[Subscription Migration] Granted ${trialMinutes}-minute trial period to ${providersWithoutSubscription.length} existing providers.`
+        `[Subscription Migration] Granted ${trialDays}-day trial period to ${providersWithoutSubscription.length} existing providers.`
       );
     }
   } catch (error) {

@@ -93,8 +93,11 @@ exports.register = async (req, res, next) => {
     // Providers only have location set if they actually submitted coordinates
     const hasLocationSet = isProviderRole ? hasCoordinates : false;
 
-    // Calculate trial expiration for providers (default 10 minutes for testing)
-    const trialMinutes = parseInt(process.env.PROVIDER_TRIAL_MINUTES || '10', 10);
+    // Calculate trial expiration for providers (default 30 days = 1 full month)
+    const trialDays = parseInt(process.env.PROVIDER_TRIAL_DAYS || '30', 10);
+    const trialMinutes = process.env.PROVIDER_TRIAL_MINUTES
+      ? parseInt(process.env.PROVIDER_TRIAL_MINUTES, 10)
+      : trialDays * 24 * 60;
     const subscriptionExpiresAt = isProviderRole
       ? new Date(Date.now() + trialMinutes * 60 * 1000)
       : null;
@@ -314,8 +317,11 @@ exports.socialAuth = async (req, res, next) => {
       ? { type: 'Point', coordinates: [parseFloat(longitude), parseFloat(latitude)] }
       : { type: 'Point', coordinates: [3.0588, 36.7538] }; // Default Algiers
 
-    // Calculate trial expiration for providers (default 10 minutes for testing)
-    const trialMinutes = parseInt(process.env.PROVIDER_TRIAL_MINUTES || '10', 10);
+    // Calculate trial expiration for providers (default 30 days = 1 full month)
+    const trialDays = parseInt(process.env.PROVIDER_TRIAL_DAYS || '30', 10);
+    const trialMinutes = process.env.PROVIDER_TRIAL_MINUTES
+      ? parseInt(process.env.PROVIDER_TRIAL_MINUTES, 10)
+      : trialDays * 24 * 60;
     const subscriptionExpiresAt = isProviderRole
       ? new Date(Date.now() + trialMinutes * 60 * 1000)
       : null;
