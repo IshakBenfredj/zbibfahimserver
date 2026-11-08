@@ -21,9 +21,37 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'يرجى إدخال كلمة المرور / Mot de passe requis'],
+    // Password is only mandatory for local (phone) accounts; social accounts have none
+    required: [
+      function () { return !this.providerId; },
+      'يرجى إدخال كلمة المرور / Mot de passe requis'
+    ],
     minlength: 6,
     select: false
+  },
+  // Social authentication (Google via Firebase Auth)
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
+  },
+  providerId: {
+    type: String,
+    default: undefined
+  },
+  email: {
+    type: String,
+    lowercase: true,
+    trim: true,
+    default: undefined
+  },
+  isPhoneVerified: {
+    type: Boolean,
+    default: false
+  },
+  hasPasswordSet: {
+    type: Boolean,
+    default: false
   },
   role: {
     type: String,
@@ -129,6 +157,16 @@ const userSchema = new mongoose.Schema({
   fcmToken: {
     type: String,
     default: null
+  },
+  // Subscription and Trial for Service Providers (seller, mechanic, electrician)
+  subscriptionType: {
+    type: String,
+    enum: ['trial', 'paid'],
+    default: 'trial'
+  },
+  subscriptionExpiresAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
@@ -137,8 +175,14 @@ const userSchema = new mongoose.Schema({
 // Create 2dsphere index for location-based geospatial queries
 userSchema.index({ location: '2dsphere' });
 
+// Each Firebase identity maps to at most one user (sparse: local accounts have no providerId)
+userSchema.index({ providerId: 1 }, { unique: true, sparse: true });
+
 // Hash password before saving
 userSchema.pre('save', async function(next) {
+  if (this.password) {
+    this.hasPasswordSet = true;
+  }
   if (!this.isModified('password')) {
     return next();
   }
@@ -149,7 +193,29 @@ userSchema.pre('save', async function(next) {
 
 // Method to verify password
 userSchema.methods.matchPassword = async function(enteredPassword) {
+  // Social accounts have no password to compare against
+  if (!this.password || !enteredPassword) return false;
   return await bcrypt.compare(enteredPassword, this.password);
+};
+
+// Check if provider subscription or trial has expired
+userSchema.methods.isSubscriptionExpired = function() {
+  if (!['seller', 'mechanic', 'electrician'].includes(this.role)) {
+    return false; // Clients and admins never expire
+  }
+  if (!this.subscriptionExpiresAt) {
+    return false;
+  }
+  return new Date() > new Date(this.subscriptionExpiresAt);
+};
+
+// Get remaining subscription time in seconds
+userSchema.methods.getSubscriptionRemainingSeconds = function() {
+  if (!['seller', 'mechanic', 'electrician'].includes(this.role) || !this.subscriptionExpiresAt) {
+    return null;
+  }
+  const diff = Math.floor((new Date(this.subscriptionExpiresAt).getTime() - Date.now()) / 1000);
+  return diff > 0 ? diff : 0;
 };
 
 module.exports = mongoose.model('User', userSchema);

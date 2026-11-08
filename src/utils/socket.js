@@ -22,7 +22,18 @@ const initSocket = (httpServer) => {
     });
 
     // Sellers join the general sellers room to get notified of new requests
-    socket.on('join_sellers', () => {
+    socket.on('join_sellers', async (data) => {
+      const sellerId = typeof data === 'string' ? data : (data && data.userId);
+      if (sellerId) {
+        try {
+          const User = require('../models/User');
+          const seller = await User.findById(sellerId);
+          if (seller && seller.role === 'seller' && typeof seller.isSubscriptionExpired === 'function' && seller.isSubscriptionExpired()) {
+            console.log(`[Socket.io] Seller ${sellerId} blocked from joining 'sellers' broadcast room due to expired subscription.`);
+            return;
+          }
+        } catch (_) {}
+      }
       socket.join('sellers');
       console.log(`[Socket.io] Socket ${socket.id} joined 'sellers' broadcast room`);
     });

@@ -103,6 +103,12 @@ exports.getAllUsers = async (req, res, next) => {
       query.isVerified = true;
     } else if (status === 'unverified') {
       query.isVerified = false;
+    } else if (status === 'expired') {
+      query.role = { $in: ['seller', 'mechanic', 'electrician'] };
+      query.subscriptionExpiresAt = { $lt: new Date() };
+    } else if (status === 'subscribed') {
+      query.role = { $in: ['seller', 'mechanic', 'electrician'] };
+      query.subscriptionExpiresAt = { $gt: new Date() };
     }
 
     if (isVerified !== undefined) {
@@ -114,6 +120,7 @@ exports.getAllUsers = async (req, res, next) => {
       query.$or = [
         { fullName: regex },
         { phone: regex },
+        { email: regex },
         { businessName: regex },
         { address: regex }
       ];
@@ -121,16 +128,23 @@ exports.getAllUsers = async (req, res, next) => {
 
     const total = await User.countDocuments(query);
     const users = await User.find(query)
-      .select('fullName phone role businessName address location rating reviewsCount isActive isVerified createdAt')
+      .select('fullName phone email role businessName address location rating reviewsCount isActive isVerified subscriptionType subscriptionExpiresAt createdAt')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
+
+    const userList = users.map(u => {
+      const obj = u.toObject();
+      obj.isSubscriptionExpired = typeof u.isSubscriptionExpired === 'function' ? u.isSubscriptionExpired() : false;
+      obj.subscriptionRemainingSeconds = typeof u.getSubscriptionRemainingSeconds === 'function' ? u.getSubscriptionRemainingSeconds() : null;
+      return obj;
+    });
 
     res.status(200).json({
       success: true,
       total,
       page: Number(page),
-      data: users
+      data: userList
     });
   } catch (err) {
     next(err);
@@ -167,6 +181,57 @@ exports.toggleUserStatus = async (req, res, next) => {
           ? 'تم تفعيل الحساب بنجاح / Compte activé avec succès'
           : 'تم تجميد وتعطيل الحساب / Compte suspendu avec succès',
       data: user
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Update / Renew User Subscription (Admin)
+// @route   PATCH /api/admin/users/:id/subscription
+// @access  Private (Admin)
+exports.updateUserSubscription = async (req, res, next) => {
+  try {
+    const { durationMinutes, durationDays, subscriptionType = 'paid' } = req.body;
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'المستخدم غير موجود / Utilisateur non trouvé'
+      });
+    }
+
+    let additionalMs = 0;
+    if (durationMinutes) {
+      additionalMs = parseInt(durationMinutes, 10) * 60 * 1000;
+    } else if (durationDays) {
+      additionalMs = parseInt(durationDays, 10) * 24 * 60 * 60 * 1000;
+    } else {
+      // Default 30 days
+      additionalMs = 30 * 24 * 60 * 60 * 1000;
+    }
+
+    // If currently active and not expired, extend from existing expiration; otherwise start from now
+    const baseDate = (user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > new Date())
+      ? new Date(user.subscriptionExpiresAt)
+      : new Date();
+
+    user.subscriptionExpiresAt = new Date(baseDate.getTime() + additionalMs);
+    user.subscriptionType = subscriptionType; // 'paid' or 'trial'
+    user.isActive = true; // Automatically unfreeze/activate if frozen
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'تم تفعيل وتجديد الاشتراك بنجاح / Abonnement activé avec succès',
+      data: {
+        id: user._id,
+        subscriptionType: user.subscriptionType,
+        subscriptionExpiresAt: user.subscriptionExpiresAt,
+        isSubscriptionExpired: user.isSubscriptionExpired(),
+        subscriptionRemainingSeconds: user.getSubscriptionRemainingSeconds()
+      }
     });
   } catch (err) {
     next(err);

@@ -23,6 +23,28 @@ const connectDB = async () => {
         `[DB Verification Reset] Unverified ${cleanup.modifiedCount} auto-verified seed accounts.`,
       );
     }
+
+    // Ensure all existing provider accounts have an active trial period for testing
+    const trialMinutes = parseInt(process.env.PROVIDER_TRIAL_MINUTES || '10', 10);
+    const providersWithoutSubscription = await User.find({
+      role: { $in: ['seller', 'mechanic', 'electrician'] },
+      $or: [
+        { subscriptionExpiresAt: null },
+        { subscriptionExpiresAt: { $exists: false } }
+      ]
+    });
+
+    if (providersWithoutSubscription.length > 0) {
+      const trialExpiresAt = new Date(Date.now() + trialMinutes * 60 * 1000);
+      for (const provider of providersWithoutSubscription) {
+        provider.subscriptionType = 'trial';
+        provider.subscriptionExpiresAt = trialExpiresAt;
+        await provider.save();
+      }
+      console.log(
+        `[Subscription Migration] Granted ${trialMinutes}-minute trial period to ${providersWithoutSubscription.length} existing providers.`
+      );
+    }
   } catch (error) {
     console.error(`[MongoDB] Connection warning/error: ${error.message}`);
     console.error(

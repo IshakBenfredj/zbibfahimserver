@@ -137,11 +137,11 @@ const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
   console.log(`===============================================`);
-  console.log(`🚀 [En Panne API] Server running on port ${PORT}`);
-  console.log(`⚡ [Realtime] Socket.io initialized & listening`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`🌐 Base URL: http://localhost:${PORT}`);
-  console.log(`🩺 Health Check: http://localhost:${PORT}/api/health`);
+  console.log(`[En Panne API] Server running on port ${PORT}`);
+  console.log(`[Realtime] Socket.io initialized & listening`);
+  console.log(`[Environment]: ${process.env.NODE_ENV || "development"}`);
+  console.log(`[Base URL]: http://localhost:${PORT}`);
+  console.log(`[Health Check]: http://localhost:${PORT}/api/health`);
   console.log(`===============================================`);
 });
 

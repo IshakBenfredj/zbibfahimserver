@@ -27,7 +27,8 @@ exports.getNearbyProviders = async (req, res, next) => {
     const matchStage = {
       isActive: true,
       hasLocationSet: true,
-      role: { $in: ['mechanic', 'electrician', 'seller'] }
+      role: { $in: ['mechanic', 'electrician', 'seller'] },
+      subscriptionExpiresAt: { $gt: new Date() }
     };
 
     if (role) {
@@ -146,7 +147,8 @@ exports.getNearbyProviders = async (req, res, next) => {
     try {
       const fallbackQuery = {
         isActive: true,
-        role: { $in: ['mechanic', 'electrician', 'seller'] }
+        role: { $in: ['mechanic', 'electrician', 'seller'] },
+        subscriptionExpiresAt: { $gt: new Date() }
       };
       if (req.query.role) fallbackQuery.role = req.query.role;
       const fallbackProviders = await User.find(fallbackQuery)
@@ -201,10 +203,15 @@ exports.getProviderById = async (req, res, next) => {
   try {
     const provider = await User.findById(req.params.id).select('-password');
 
-    if (!provider || !['mechanic', 'electrician', 'seller'].includes(provider.role)) {
+    if (
+      !provider ||
+      !['mechanic', 'electrician', 'seller'].includes(provider.role) ||
+      !provider.isActive ||
+      (typeof provider.isSubscriptionExpired === 'function' && provider.isSubscriptionExpired())
+    ) {
       return res.status(404).json({
         success: false,
-        message: 'مقدم الخدمة غير موجود / Prestataire introuvable'
+        message: 'مقدم الخدمة غير متاح حالياً / Prestataire indisponible'
       });
     }
 

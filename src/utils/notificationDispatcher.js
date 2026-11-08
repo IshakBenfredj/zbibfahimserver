@@ -128,7 +128,7 @@ async function sendPushNotification(fcmToken, title, body, data = {}) {
  */
 async function notifyNewQuote({ recipientId, senderId, sellerName, partName, price, partRequestId, quoteId }) {
   try {
-    const title = 'عرض سعر جديد على طلبك! 🚗';
+    const title = 'عرض سعر جديد على طلبك';
     const message = `قدّم ${sellerName} عرض سعر بقيمة ${price} دج لقطعة "${partName}". اضغط للاطلاع على التفاصيل.`;
 
     // 1. Save in MongoDB
@@ -176,7 +176,13 @@ async function notifyNewQuote({ recipientId, senderId, sellerName, partName, pri
  */
 async function notifyQuoteAccepted({ sellerId, clientId, clientName, clientPhone, partName, price, partRequestId, quoteId }) {
   try {
-    const title = 'تهانينا! تم قبول عرضك 🎉';
+    const seller = await User.findById(sellerId);
+    if (!seller || !seller.isActive || (typeof seller.isSubscriptionExpired === 'function' && seller.isSubscriptionExpired())) {
+      console.log(`[Notification Dispatcher] Seller ${sellerId} is inactive or subscription expired. Skipping notifications.`);
+      return null;
+    }
+
+    const title = 'تم قبول عرضك';
     const message = `قام الزبون ${clientName} بقبول عرضك لقطعة "${partName}" بقيمة ${price} دج. يرجى التواصل معه لتسليم القطعة.`;
 
     // 1. Save in MongoDB
@@ -207,8 +213,7 @@ async function notifyQuoteAccepted({ sellerId, clientId, clientName, clientPhone
     });
 
     // 3. Dispatch outside-the-app Push Notification
-    const seller = await User.findById(sellerId).select('fcmToken');
-    if (seller && seller.fcmToken) {
+    if (seller.fcmToken) {
       await sendPushNotification(seller.fcmToken, title, message, {
         type: 'quote_accepted',
         partRequestId: String(partRequestId),
@@ -223,7 +228,7 @@ async function notifyQuoteAccepted({ sellerId, clientId, clientName, clientPhone
 }
 
 /**
- * Broadcast Phone Push Notification ONLY to Spare Parts Sellers
+ * Broadcast Phone Push Notification ONLY to Active Spare Parts Sellers
  * (WITHOUT saving to MongoDB database, as per user requirement)
  */
 async function notifySellersNewPartRequestPushOnly({ requestId, partName, carBrand, carModel, carYear, address, clientLocation }) {
@@ -235,16 +240,17 @@ async function notifySellersNewPartRequestPushOnly({ requestId, partName, carBra
     const query = {
       role: 'seller',
       isActive: { $ne: false },
+      subscriptionExpiresAt: { $gt: new Date() },
       fcmToken: { $exists: true, $ne: null, $nin: ['', 'null', 'undefined'] }
     };
 
     const sellers = await User.find(query).select('fcmToken brandsSupported');
     if (!sellers || sellers.length === 0) {
-      console.log('[Push Notification] No active sellers with registered FCM tokens found.');
+      console.log('[Push Notification] No active unexpired sellers with registered FCM tokens found.');
       return;
     }
 
-    const title = 'طلب قطعة غيار جديد! 🔧';
+    const title = 'طلب قطعة غيار جديد';
     const vehicleText = [carBrand, carModel, carYear].filter(Boolean).join(' ');
     const body = vehicleText 
       ? `طلب جديد لقطعة "${partName}" لسيارة ${vehicleText}. اضغط لتقديم عرضك.`
@@ -323,6 +329,8 @@ module.exports = {
   notifyNewQuote,
   notifyQuoteAccepted,
   notifySellersNewPartRequestPushOnly,
-  sendPushNotification
+  sendPushNotification,
+  // Shared initialized Firebase Admin instance (null if credentials are missing)
+  getFirebaseAdmin: () => admin
 };
 

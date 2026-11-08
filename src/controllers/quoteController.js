@@ -9,6 +9,20 @@ const { notifyNewQuote, notifyQuoteAccepted } = require('../utils/notificationDi
 // @access  Private (Seller only)
 exports.createOrUpdateQuote = async (req, res, next) => {
   try {
+    // Block sellers whose subscription or trial has expired
+    if (
+      req.user &&
+      req.user.role === 'seller' &&
+      typeof req.user.isSubscriptionExpired === 'function' &&
+      req.user.isSubscriptionExpired()
+    ) {
+      return res.status(403).json({
+        success: false,
+        isSubscriptionExpired: true,
+        message: 'انتهت الفترة التجريبية أو الاشتراك. يرجى تجديد الاشتراك لتتمكن من تقديم عروض الأسعار / Abonnement expiré'
+      });
+    }
+
     const { partRequestId, price, notes, deliveryAvailable } = req.body;
 
     const request = await SparePartRequest.findById(partRequestId);

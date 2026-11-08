@@ -133,6 +133,20 @@ exports.getMyRequests = async (req, res, next) => {
 // @access  Private (Seller only)
 exports.getNearbyRequestsForSellers = async (req, res, next) => {
   try {
+    // Block sellers whose subscription or trial has expired
+    if (
+      req.user &&
+      req.user.role === 'seller' &&
+      typeof req.user.isSubscriptionExpired === 'function' &&
+      req.user.isSubscriptionExpired()
+    ) {
+      return res.status(403).json({
+        success: false,
+        isSubscriptionExpired: true,
+        message: 'انتهت الفترة التجريبية أو الاشتراك. يرجى التجديد لتتمكن من استعراض طلبات الزبائن / Abonnement expiré'
+      });
+    }
+
     const {
       longitude,
       latitude,
