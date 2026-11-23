@@ -638,8 +638,7 @@ exports.sendWhatsAppOtp = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'تم إرسال رمز التحقق عبر واتساب بنجاح / Code de vérification envoyé sur WhatsApp',
-      formattedPhone: twilioResult.formattedPhone,
-      devOtp: process.env.NODE_ENV !== 'production' || twilioResult.simulated ? otp : undefined
+      formattedPhone: twilioResult.formattedPhone
     });
   } catch (err) {
     next(err);
@@ -711,4 +710,40 @@ exports.verifyWhatsAppOtp = async (req, res, next) => {
     next(err);
   }
 };
+
+// @desc    Delete logged in user's own account permanently
+// @route   DELETE /api/auth/account
+// @access  Private
+exports.deleteMyAccount = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'الحساب غير موجود / Utilisateur non trouvé'
+      });
+    }
+
+    const SparePartRequest = require('../models/SparePartRequest');
+    const PartQuote = require('../models/PartQuote');
+    const Review = require('../models/Review');
+    const Notification = require('../models/Notification');
+
+    // Cascade deletion of user data
+    await SparePartRequest.deleteMany({ client: user._id });
+    await PartQuote.deleteMany({ seller: user._id });
+    await Review.deleteMany({ $or: [{ client: user._id }, { provider: user._id }] });
+    await Notification.deleteMany({ recipient: user._id });
+    await OtpVerification.deleteMany({ phone: user.phone });
+    await User.findByIdAndDelete(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'تم حذف حسابك وجميع بياناتك نهائياً بنجاح / Compte supprimé avec succès'
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 

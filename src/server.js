@@ -1,5 +1,6 @@
 const http = require("http");
 const express = require("express");
+const compression = require("compression");
 const cors = require("cors");
 const path = require("path");
 const dotenv = require("dotenv");
@@ -22,6 +23,9 @@ const server = http.createServer(app);
 // Initialize Socket.io Realtime Service
 initSocket(server);
 
+// Gzip / Brotli response compression to minimize network bandwidth
+app.use(compression());
+
 // Body Parser & URL Encoded
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -35,8 +39,12 @@ app.use(
   }),
 );
 
-// Serve static uploads
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+// Serve static uploads with browser / client cache (30 days) to save bandwidth
+app.use("/uploads", express.static(path.join(__dirname, "../uploads"), {
+  maxAge: "30d",
+  immutable: true,
+  etag: true
+}));
 
 // Root route
 app.get("/", (req, res) => {
@@ -121,6 +129,7 @@ app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/upload", require("./routes/uploadRoutes"));
+app.use("/api/reports", require("./routes/reportRoutes"));
 
 // 404 Route Not Found Handler
 app.use((req, res) => {

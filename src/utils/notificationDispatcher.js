@@ -325,11 +325,96 @@ async function notifySellersNewPartRequestPushOnly({ requestId, partName, carBra
   }
 }
 
+/**
+ * Broadcast Notification to users (in-app + FCM Push)
+ */
+async function broadcastPushNotification({ title, message, targetRole = 'all', adminId = null }) {
+  try {
+    const userQuery = { isActive: { $ne: false } };
+    if (targetRole === 'clients') {
+      userQuery.role = 'client';
+    } else if (targetRole === 'providers') {
+      userQuery.role = { $in: ['seller', 'mechanic', 'electrician'] };
+    } else if (targetRole && targetRole !== 'all') {
+      userQuery.role = targetRole;
+    }
+
+    const users = await User.find(userQuery).select('_id fcmToken');
+    if (!users || users.length === 0) {
+      return { totalTargeted: 0, inAppCount: 0, pushCount: 0, tokensAvailable: 0 };
+    }
+
+    // 1. Create in-app notification records in bulk
+    const notificationsToInsert = users.map(u => ({
+      recipient: u._id,
+      sender: adminId,
+      type: 'system',
+      title,
+      message,
+      data: {
+        extra: { broadcast: true, targetRole }
+      }
+    }));
+    await Notification.insertMany(notificationsToInsert, { ordered: false }).catch(err => {
+      console.warn('[Broadcast Notification] Bulk insert warning:', err.message);
+    });
+
+    // 2. Dispatch FCM Push Notifications if tokens available and admin initialized
+    let pushCount = 0;
+    const tokens = users
+      .map(u => u.fcmToken)
+      .filter(t => t && typeof t === 'string' && t.trim().length > 10);
+
+    if (admin && tokens.length > 0) {
+      const chunkSize = 500;
+      for (let i = 0; i < tokens.length; i += chunkSize) {
+        const chunk = tokens.slice(i, i + chunkSize);
+        try {
+          const res = await admin.messaging().sendEachForMulticast({
+            tokens: chunk,
+            notification: {
+              title,
+              body: message
+            },
+            data: {
+              type: 'system_broadcast',
+              title,
+              message
+            },
+            android: {
+              priority: 'high',
+              notification: {
+                sound: 'default',
+                channelId: 'enpanne_alerts',
+                priority: 'max'
+              }
+            }
+          });
+          pushCount += res.successCount;
+        } catch (fcmErr) {
+          console.error('[Broadcast FCM Error]:', fcmErr.message);
+        }
+      }
+    }
+
+    return {
+      totalTargeted: users.length,
+      inAppCount: notificationsToInsert.length,
+      pushCount,
+      tokensAvailable: tokens.length
+    };
+  } catch (err) {
+    console.error('[Broadcast Notification Error]:', err);
+    throw err;
+  }
+}
+
 module.exports = {
   notifyNewQuote,
   notifyQuoteAccepted,
   notifySellersNewPartRequestPushOnly,
   sendPushNotification,
+  broadcastPushNotification,
   // Shared initialized Firebase Admin instance (null if credentials are missing)
   getFirebaseAdmin: () => admin
 };

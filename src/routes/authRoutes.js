@@ -10,7 +10,8 @@ const {
   changePassword,
   toggleShopStatus,
   sendWhatsAppOtp,
-  verifyWhatsAppOtp
+  verifyWhatsAppOtp,
+  deleteMyAccount
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
@@ -25,6 +26,7 @@ router.put('/profile', protect, updateProfile);
 router.put('/shop-status', protect, toggleShopStatus);
 router.put('/password', protect, changePassword);
 router.post('/avatar', protect, upload.single('avatar'), uploadAvatar);
+router.delete('/account', protect, deleteMyAccount);
 
 module.exports = router;
 
